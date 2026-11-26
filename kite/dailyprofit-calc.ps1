@@ -2,7 +2,6 @@
 $sourceFolder = "C:\Users\suppo\Downloads"
 $destinationFolder = "D:\GitHub\Powershell\kite"
 $destinationFileName = "holdings.csv"
-$excludeFilePath = "D:\GitHub\Powershell\kite\exclude.txt"
 $profitFilePath = "D:\GitHub\Powershell\kite\profit.csv"
 
 # Find the latest file with the pattern holdings*.csv in the source folder
@@ -23,12 +22,10 @@ $destinationPath = Join-Path -Path $destinationFolder -ChildPath $destinationFil
 Move-Item -Path $latestFile.FullName -Destination $destinationPath -Force
 Write-Output "Moved $($latestFile.Name) to $destinationPath"
 
-# Read the list of instruments to exclude and trim any whitespace
-$excludeList = Get-Content -Path $excludeFilePath | ForEach-Object { $_.Trim() }
-
-# Import CSV and calculate total profit and total P&L
-$totalProfit = 0
+# Import CSV and calculate total profit, total P&L, invested value, and current value
 $totalPnL = 0
+$investedValue = 0
+$currentValue = 0
 $processedCount = 0
 $holderName = "UNKNOWN"  # Default holder name
 
@@ -36,7 +33,7 @@ $holderName = "UNKNOWN"  # Default holder name
 $csvData = Import-Csv -Path $destinationPath
 
 # Determine the holder name based on instrument presence
-if ($csvData.Instrument -contains "RAJMET") {
+if ($csvData.Instrument -contains "RAJMET-BE") {
     $holderName = "Navneeth"
 } elseif ($csvData.Instrument -contains "VIKASECO") {
     $holderName = "Kaushik"
@@ -44,30 +41,39 @@ if ($csvData.Instrument -contains "RAJMET") {
     $holderName = "Ramesh"
 }
 
+# Read the list of instruments to exclude, trim whitespace, and convert to lowercase
+$excludeFilePath = "D:\GitHub\Powershell\kite\exclude_$holderName.txt"
+$excludeList = Get-Content -Path $excludeFilePath | ForEach-Object { $_.Trim().ToLower() }
+
+
 # Filter out the records of excluded instruments
 $filteredData = @()
 
 foreach ($row in $csvData) {
     # Extract relevant fields and convert them to numbers
-    $instrument = $row.Instrument.Trim()  # Trim any extra spaces
+    $instrument = $row.Instrument.Trim().ToLower()  # Trim and convert to lowercase
+    $qty = [double]$row.'Qty.'
+    $avgCost = [double]$row.'Avg. cost'
+    $ltp = [double]$row.LTP
     $curVal = [double]$row.'Cur. val'
     $dayChg = [double]$row.'Day chg.'
     $pnl = [double]$row.'P&L'
 
     # Check if the instrument is in the exclude list (case-insensitive)
-    if ($excludeList -contains $instrument -or $excludeList -contains $instrument.ToUpper()) {
-        Write-Output "Skipping instrument $instrument as it is in the exclude list."
+    if ($excludeList -contains $instrument) {
+        Write-Output "Skipping instrument $($row.Instrument) as it is in the exclude list."
         continue
     }
-
-    # Calculate profit for the instrument using the corrected formula
-    $profit = $curVal - ($curVal / (($dayChg / 100) + 1))
+    
 
     # Add profit to the total profit
-    $totalProfit += $profit
 
     # Add P&L to the total P&L
     $totalPnL += $pnl
+
+    # Calculate and add to the invested value and current value
+    $investedValue += $qty * $avgCost
+    $currentValue += $qty * $ltp
 
     # Increment the processed count
     $processedCount++
@@ -76,9 +82,11 @@ foreach ($row in $csvData) {
     $filteredData += $row
 }
 
-# Output the total profit, P&L, and number of instruments processed
+# Output the total profit, P&L, invested value, current value, and number of instruments processed
 Write-Output "Total Profit for all instruments for holder $($holderName): $totalProfit"
 Write-Output "Total P&L for all instruments: $totalPnL"
+Write-Output "Invested Value: $investedValue"
+Write-Output "Current Value: $currentValue"
 Write-Output "Total number of instruments processed: $processedCount"
 
 # Get the current date in the format 'dd-MMM-yyyy'
@@ -86,10 +94,11 @@ $currentDate = Get-Date -Format "dd-MMM-yyyy"
 
 # Prepare the data to append
 $record = [pscustomobject]@{
-    Date         = $currentDate
-    'Holder name' = $holderName
-    Profit        = $totalProfit
-    'Total P&L'   = $totalPnL
+    Date            = $currentDate
+    'Holder name'   = $holderName
+    'Invested Value' = $investedValue
+    'Current Value'  = $currentValue
+    'Total P&L'     = $totalPnL
 }
 
 # Append the result to the profit.csv file
