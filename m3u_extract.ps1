@@ -24,35 +24,35 @@ function Get-ContentSize {
 foreach ($file in $textFiles) {
     Write-Host "Processing file: $($file.FullName)"
     
-    # Initialize variables to keep track of the largest URL and its size for the current file
-    $largestUrl = $null
-    $largestSize = 0
+    # Initialize an array to hold URL details for the current file
+    $urlDetails = @()
 
     # Read the file and extract full URLs containing 'get.php'
     $urls = Select-String -Path $file.FullName -Pattern "http[s]?://[^ ]*get\.php[^ ]*" | ForEach-Object { $_.Matches.Value }
 
-    # Loop through each URL, get its content size and compare it
+    # Loop through each URL, get its content size and store details
     foreach ($url in $urls) {
-        Write-Host "  -NoNewline Processing URL: $url......."
-        $size = Get-ContentSize -url $url
-        Write-Host "Size is : $size bytes"
-        if ($size -gt $largestSize) {
-            $largestSize = $size
-            $largestUrl = $url
+        Write-Host -NoNewline "  Processing URL: $url......."
+        $sizeBytes = Get-ContentSize -url $url
+        $sizeMB = [math]::Round($sizeBytes / 1MB, 2)
+        Write-Host "Size is : $sizeBytes bytes ($sizeMB MB)"
+        
+        # Store the URL and its size details
+        $urlDetails += [PSCustomObject]@{
+            URL        = $url
+            SizeBytes  = $sizeBytes
+            SizeMB     = $sizeMB
         }
     }
 
-    # Output the largest URL and its size for the current file
-    if ($largestUrl) {
-        Write-Host "The URL with the largest content in file $($file.Name) is:"
-        Write-Host "$largestUrl"
-        Write-Host "Content Size: $($largestSize) bytes"
-		Set-Clipboard -Value $largestUrl
-    } else {
-        Write-Host "No valid URLs found in file $($file.Name)."
-		Set-Clipboard -Value ""
-    }
-    
-    Write-Host 'Press any key to continue...';
-    $null = $Host.UI.RawUI.ReadKey('NoEcho,IncludeKeyDown');
+    # Sort the URLs by size in descending order
+    $sortedUrlDetails = $urlDetails | Sort-Object -Property SizeBytes -Descending
+
+    # Define the output CSV file path based on the current input file name
+    $outputCsvPath = "$($file.DirectoryName)\$($file.BaseName)_URL_Sizes.csv"
+
+    # Export the sorted URLs to a CSV file
+    $sortedUrlDetails | Export-Csv -Path $outputCsvPath -NoTypeInformation
+
+    Write-Host "Processed URLs saved to $outputCsvPath"
 }
